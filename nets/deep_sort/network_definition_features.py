@@ -1,9 +1,6 @@
 # vim: expandtab:ts=4:sw=4
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
-from imgaug import augmenters as iaa
-import random
-import numpy as np
 
 from . import residual_net
 
@@ -22,27 +19,6 @@ def create_network(images, num_classes=None, add_logits=True, reuse=None,
         return slim.batch_norm(x, scope=tf.get_variable_scope().name + "/bn")
 
     network = images
-    network = slim.conv2d(
-        network, 32, [3, 3], stride=1, activation_fn=nonlinearity,
-        padding="SAME", normalizer_fn=batch_norm_fn, scope="conv1_1",
-        weights_initializer=conv_weight_init, biases_initializer=conv_bias_init,
-        weights_regularizer=conv_regularizer)
-    if create_summaries:
-        tf.summary.histogram(network.name + "/activations", network)
-        tf.summary.image("conv1_1/weights", tf.transpose(
-            slim.get_variables("conv1_1/weights:0")[0], [3, 0, 1, 2]),
-                         max_outputs=128)
-    network = slim.conv2d(
-        network, 32, [3, 3], stride=1, activation_fn=nonlinearity,
-        padding="SAME", normalizer_fn=batch_norm_fn, scope="conv1_2",
-        weights_initializer=conv_weight_init, biases_initializer=conv_bias_init,
-        weights_regularizer=conv_regularizer)
-    if create_summaries:
-        tf.summary.histogram(network.name + "/activations", network)
-
-    network = slim.max_pool2d(
-        network, [3, 3], [2, 2], scope="pool1", padding="SAME")
-
     network = residual_net.residual_block(
         network, "conv2_1", nonlinearity, conv_weight_init, conv_bias_init,
         conv_regularizer, increase_dim=False, is_first=True,
@@ -126,32 +102,7 @@ def create_network_factory(is_training, num_classes, add_logits,
     return factory_fn
 
 
-def augmentation(image):
-    image = image.astype(np.uint8)
-    seq = iaa.Sequential([  iaa.Fliplr(0.5),
-                            iaa.Cutout(size=(0.1,0.4), position='normal', squared=False),
-                            iaa.Sometimes(0.5, iaa.GaussianBlur(sigma=(0,0.5))),
-                            iaa.AddToBrightness((-30,30)),
-                            iaa.AddToHueAndSaturation((-30,30)),
-                            iaa.Grayscale(alpha=(0.0,1.0)),
-                            iaa.Affine(
-                                scale={'x':(0.9,1.1),'y':(0.9,1.1)},
-                                translate_percent={'x':(-0.1,0.1), 'y': (-0.1,0.1) },
-                                rotate=(-10,10),
-                                shear = (-8,8), mode='edge')
-                        ], random_order=True)
-    if random.randint(0,1):
-        image_aug = seq(image=image)
-        return image_aug
-    else:
-        return image
-
 def preprocess(image, is_training=False, input_is_bgr=False):
-    if input_is_bgr:
-        image = image[:, :, ::-1]  # BGR to RGB
     if is_training:
-        image = tf.numpy_function(augmentation, [image], tf.uint8)
-        image.set_shape((128,64,3))
-        # tf.summary.image('preprocessed_images', image)
-    image = tf.divide(tf.cast(image, tf.float32), 255.0)
+        image = tf.image.random_flip_left_right(image)
     return image

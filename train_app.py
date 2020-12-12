@@ -111,7 +111,7 @@ def to_eval_kwargs(args):
 def train_loop(preprocess_fn, network_factory, train_x, train_y,
                num_images_per_id, batch_size, log_dir, image_shape=None,
                restore_path=None, exclude_from_restore=None, run_id=None,
-               number_of_steps=None, loss_mode="cosine-softmax",
+               number_of_steps=None, loss_mode="cosine-softmax",is_features=False,
                learning_rate=1e-3, trainable_scopes=None,
                save_summaries_secs=60, save_interval_secs=300):
     """Start training.
@@ -182,10 +182,16 @@ def train_loop(preprocess_fn, network_factory, train_x, train_y,
         assert train_x.shape[1:] == image_shape
     read_from_file = type(train_x) != np.ndarray
 
-    trainer, train_op = create_trainer(
-        preprocess_fn, network_factory, read_from_file, image_shape, batch_size,
-        loss_mode, learning_rate=learning_rate,
-        trainable_scopes=trainable_scopes)
+    if not is_features:
+        trainer, train_op = create_trainer(
+            preprocess_fn, network_factory, read_from_file, image_shape, batch_size,
+            loss_mode, learning_rate=learning_rate,
+            trainable_scopes=trainable_scopes)
+    else:
+        trainer, train_op = create_trainer_for_features(
+            preprocess_fn, network_factory, read_from_file, image_shape, batch_size,
+            loss_mode, learning_rate=learning_rate,
+            trainable_scopes=trainable_scopes)
 
     feed_generator = queued_trainer.random_sample_identities_forever(
         batch_size, num_images_per_id, train_x, train_y)
@@ -197,7 +203,6 @@ def train_loop(preprocess_fn, network_factory, train_x, train_y,
         variables_to_restore=variables_to_restore,
         run_id=run_id, save_summaries_secs=save_summaries_secs,
         save_interval_secs=save_interval_secs, number_of_steps=number_of_steps)
-
 
 def create_trainer(preprocess_fn, network_factory, read_from_file, image_shape,
                    batch_size, loss_mode, learning_rate=1e-3,
@@ -291,6 +296,63 @@ def create_trainer(preprocess_fn, network_factory, read_from_file, image_shape,
     tf.summary.scalar("weight_loss", regularization_var)
     return trainer, train_op
 
+def create_trainer_for_features(preprocess_fn, network_factory, read_from_file, image_shape,
+                   batch_size, loss_mode, learning_rate=1e-3,
+                   trainable_scopes=None):
+
+    num_channels = image_shape[-1] if len(image_shape) == 3 else 1
+
+    with tf.device("/cpu:0"):
+        label_var = tf.placeholder(tf.int64, (None,))
+
+        def npload(file):
+            return np.load(file, allow_pickle=True)
+
+        if read_from_file:
+            # NOTE(nwojke): tf.image.decode_jpg handles various image types.
+            filename_var = tf.placeholder(tf.string, (None, ))
+            image_var = tf.map_fn(lambda x: tf.numpy_function(npload, [x], tf.float32), filename_var, back_prop=False, dtype=tf.float32)
+            image_var.set_shape((None,) + image_shape)
+            input_vars = [filename_var, label_var]
+        else:
+            image_var = tf.placeholder(tf.float32, (None,) + image_shape)
+            input_vars = [image_var, label_var]
+
+        enqueue_vars = [
+            tf.map_fn(
+                lambda x: preprocess_fn(x, is_training=True),
+                image_var, back_prop=False, dtype=tf.float32),
+            label_var]
+
+    trainer = queued_trainer.QueuedTrainer(enqueue_vars, input_vars)
+    image_var, label_var = trainer.get_input_vars(batch_size)
+    # tf.summary.image("images", image_var)
+
+    feature_var, logit_var = network_factory(image_var)
+    _create_loss(feature_var, logit_var, label_var, mode=loss_mode)
+
+    if trainable_scopes is None:
+        variables_to_train = tf.trainable_variables()
+    else:
+        variables_to_train = []
+        for scope in trainable_scopes:
+            variables = tf.get_collection(
+                tf.GraphKeys.TRAINABLE_VARIABLES, scope)
+            variables_to_train.extend(variables)
+
+    global_step = tf.train.get_or_create_global_step()
+
+    loss_var = tf.losses.get_total_loss()
+    train_op = slim.learning.create_train_op(
+        loss_var, tf.train.AdamOptimizer(learning_rate=learning_rate),
+        global_step, summarize_gradients=False,
+        variables_to_train=variables_to_train)
+    tf.summary.scalar("total_loss", loss_var)
+    tf.summary.scalar("learning_rate", learning_rate)
+
+    regularization_var = tf.reduce_sum(tf.losses.get_regularization_loss())
+    tf.summary.scalar("weight_loss", regularization_var)
+    return trainer, train_op
 
 def eval_loop(preprocess_fn, network_factory, data_x, data_y, camera_indices,
               log_dir, eval_log_dir, image_shape=None, run_id=None,
@@ -441,6 +503,153 @@ def eval_loop(preprocess_fn, network_factory, data_x, data_y, camera_indices,
         (probes, galleries), log_dir, eval_log_dir, run_id=run_id,
         eval_op=list(names_to_updates.values()), eval_interval_secs=60)
 
+def eval_loop_for_features(preprocess_fn, network_factory, data_x, data_y, camera_indices,
+              log_dir, eval_log_dir, image_shape=None, run_id=None,
+              loss_mode="cosine-softmax", num_galleries=10, random_seed=4321):
+    """Evaluate a running training session using CMC metric averaged over
+    `num_galleries` galleries where each gallery contains for every identity a
+    randomly selected image-pair.
+
+    A call to this function will block indefinitely, monitoring the
+    `log_dir/run_id` for saved checkpoints. Then, creates summaries in
+    `eval_log_dir/run_id` that can be monitored with tensorboard.
+
+    Parameters
+    ----------
+    preprocess_fn : Callable[tf.Tensor] -> tf.Tensor
+        A callable that applies preprocessing to a given input image tensor of
+        dtype tf.uint8 and returns a floating point representation (tf.float32).
+    network_factory : Callable[tf.Tensor] -> (tf.Tensor, tf.Tensor)
+        A callable that takes as argument a preprocessed input image of dtype
+        tf.float32 and returns the feature representation as well as a logits
+        tensors. The logits may be set to None if not required by the loss.
+    data_x : List[str] | np.ndarray
+        A list of image filenames or a tensor of images.
+    data_y : List[int] | np.ndarray
+        A list or one-dimensional array of labels for the images in `data_x`.
+    camera_indices: Optional[List[int] | np.ndarray]
+        A list or one-dimensional array of camera indices for the images in
+        `data_x`. If not None, CMC galleries are created such that image pairs
+        are collected from different cameras.
+    log_dir: str
+        Should be equivalent to the `log_dir` passed into `train_loop` of the
+        training run to monitor.
+    eval_log_dir:
+        Used to construct the tensorboard log directory where metrics are
+        summarized.
+    image_shape : Tuple[int, int, int] | NoneType
+        Image shape (height, width, channels) or None. If None, `train_x` must
+        be an array of images such that the shape can be queries from this
+        variable.
+    run_id : str
+        A string that identifies the training run; must be set to the same
+        `run_id` passed into `train_loop`.
+    loss_mode : Optional[str]
+        A string that identifies the loss function used for training; must be
+        one of 'cosine-softmax', 'magnet', 'triplet'. This value defaults to
+        'cosine-softmax'.
+    num_galleries: int
+        The number of galleries to be constructed for evaluation of CMC
+        metrics.
+    random_seed: Optional[int]
+        If not None, the NumPy random seed is fixed to this number; can be used
+        to produce the same galleries over multiple runs.
+
+    """
+    if image_shape is None:
+        # If image_shape is not set, train_x must be an image array. Here we
+        # query the image shape from the array of images.
+        assert type(data_x) == np.ndarray
+        image_shape = data_x.shape[1:]
+    elif type(data_x) == np.ndarray:
+        assert data_x.shape[1:] == image_shape
+    read_from_file = type(data_x) != np.ndarray
+
+    # Create num_galleries random CMC galleries to average CMC top-k over.
+    probes, galleries = [], []
+    for i in range(num_galleries):
+        probe_indices, gallery_indices = util.create_cmc_probe_and_gallery(
+            data_y, camera_indices, seed=random_seed + i)
+        probes.append(probe_indices)
+        galleries.append(gallery_indices)
+    probes, galleries = np.asarray(probes), np.asarray(galleries)
+
+    # Set up the data feed.
+    with tf.device("/cpu:0"):
+        # Feed probe and gallery indices to the trainer.
+        num_probes, num_gallery_images = probes.shape[1], galleries.shape[1]
+        probe_idx_var = tf.placeholder(tf.int64, (None, num_probes))
+        gallery_idx_var = tf.placeholder(tf.int64, (None, num_gallery_images))
+        trainer = queued_trainer.QueuedTrainer(
+            [probe_idx_var, gallery_idx_var])
+
+        # Retrieve indices from trainer and gather data from constant memory.
+        data_x_var = tf.constant(data_x)
+        data_y_var = tf.constant(data_y)
+
+        probe_idx_var, gallery_idx_var = trainer.get_input_vars(batch_size=1)
+        probe_idx_var = tf.squeeze(probe_idx_var)
+        gallery_idx_var = tf.squeeze(gallery_idx_var)
+
+        # Apply preprocessing.
+        probe_x_var = tf.gather(data_x_var, probe_idx_var)
+        if read_from_file:
+            def npload(file):
+                return np.load(file, allow_pickle=True)
+
+            # NOTE(nwojke): tf.image.decode_jpg handles various image types.
+            num_channels = image_shape[-1] if len(image_shape) == 3 else 1
+            probe_x_var = tf.map_fn(lambda x: tf.numpy_function(npload, [x], tf.float32), probe_x_var, back_prop=False, dtype=tf.float32)
+            probe_x_var.set_shape((None,) + image_shape)
+        probe_x_var = tf.map_fn(
+            lambda x: preprocess_fn(x, is_training=False),
+            probe_x_var, back_prop=False, dtype=tf.float32)
+        probe_y_var = tf.gather(data_y_var, probe_idx_var)
+
+        gallery_x_var = tf.gather(data_x_var, gallery_idx_var)
+        if read_from_file:
+            def npload(file):
+                return np.load(file, allow_pickle=True)
+
+            # NOTE(nwojke): tf.image.decode_jpg handles various image types.
+            num_channels = image_shape[-1] if len(image_shape) == 3 else 1
+            gallery_x_var = tf.map_fn(lambda x: tf.numpy_function(npload, [x], tf.float32), gallery_x_var, back_prop=False, dtype=tf.float32)
+            gallery_x_var.set_shape((None,) + image_shape)
+        gallery_x_var = tf.map_fn(
+            lambda x: preprocess_fn(x, is_training=False),
+            gallery_x_var, back_prop=False, dtype=tf.float32)
+        gallery_y_var = tf.gather(data_y_var, gallery_idx_var)
+
+    # Construct the network and compute features.
+    probe_and_gallery_x_var = tf.concat(
+        axis=0, values=[probe_x_var, gallery_x_var])
+    probe_and_gallery_x_var, _ = network_factory(probe_and_gallery_x_var)
+
+    num_probe = tf.shape(probe_x_var)[0]
+    probe_x_var = tf.slice(
+        probe_and_gallery_x_var, [0, 0], [num_probe, -1])
+    gallery_x_var = tf.slice(
+        probe_and_gallery_x_var, [num_probe, 0], [-1, -1])
+
+    # Set up the metrics.
+    distance_measure = (
+        metrics.cosine_distance if loss_mode == "cosine-softmax"
+        else metrics.pdist)
+
+    def cmc_metric_at_k(k):
+        return metrics.streaming_mean_cmc_at_k(
+            probe_x_var, probe_y_var, gallery_x_var, gallery_y_var,
+            k=k, measure=distance_measure)
+
+    names_to_values, names_to_updates = slim.metrics.aggregate_metric_map({
+        "Precision@%d" % k: cmc_metric_at_k(k) for k in [1, 5, 10, 20]})
+    for metric_name, metric_value in names_to_values.items():
+        tf.summary.scalar(metric_name, metric_value)
+
+    # Start evaluation loop.
+    trainer.evaluate(
+        (probes, galleries), log_dir, eval_log_dir, run_id=run_id,
+        eval_op=list(names_to_updates.values()), eval_interval_secs=60)
 
 def finalize(preprocess_fn, network_factory, checkpoint_path, image_shape,
              output_filename):
