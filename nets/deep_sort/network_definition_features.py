@@ -1,8 +1,14 @@
 # vim: expandtab:ts=4:sw=4
+import matplotlib
+matplotlib.use('Agg')
+from matplotlib import pyplot
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
-
+import numpy as np
+from imgaug import augmenters as iaa
+import random
 from . import residual_net
+import cv2
 
 
 def create_network(images, num_classes=None, add_logits=True, reuse=None,
@@ -67,7 +73,7 @@ def create_network(images, num_classes=None, add_logits=True, reuse=None,
             weights = slim.model_variable(
                 "mean_vectors", (feature_dim, int(num_classes)),
                 initializer=tf.truncated_normal_initializer(stddev=1e-3),
-                regularizer=None)
+                regularizer=slim.l2_regularizer(1e-8))
             scale = slim.model_variable(
                 "scale", (), tf.float32,
                 initializer=tf.constant_initializer(0., tf.float32),
@@ -102,7 +108,25 @@ def create_network_factory(is_training, num_classes, add_logits,
     return factory_fn
 
 
+def augmentation(image):
+    seq = iaa.Sequential([  iaa.Fliplr(0.5),
+                            iaa.Cutout(size=(0.1,0.4), position='normal', squared=False),
+                            iaa.Affine(
+                                scale={'x':(0.9,1.1),'y':(0.9,1.1)},
+                                translate_percent={'x':(-0.1,0.1), 'y': (-0.1,0.1) },
+                                rotate=(-10,10),
+                                shear = (-8,8), mode='edge')
+                        ], random_order=True)
+    if random.randint(0,1):
+        image_aug = seq(image=image)
+        return image_aug
+    else:
+        return image
+
 def preprocess(image, is_training=False, input_is_bgr=False):
+    if input_is_bgr:
+        image = image[:, :, ::-1]  # BGR to RGB
     if is_training:
-        image = tf.image.random_flip_left_right(image)
+        image = tf.numpy_function(augmentation, [image], tf.float32)
+        image.set_shape((64,32,32))
     return image

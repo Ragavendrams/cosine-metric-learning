@@ -54,7 +54,6 @@ def create_default_argument_parser(dataset_name):
         "created", type=str, default=None)
     return parser
 
-
 def to_train_kwargs(args):
     """Parse command-line training arguments.
 
@@ -82,7 +81,6 @@ def to_train_kwargs(args):
     }
     return kwargs_dict
 
-
 def to_eval_kwargs(args):
     """Parse command-line evaluation arguments.
 
@@ -106,7 +104,6 @@ def to_eval_kwargs(args):
         "run_id": args.run_id,
     }
     return kwargs_dict
-
 
 def train_loop(preprocess_fn, network_factory, train_x, train_y,
                num_images_per_id, batch_size, log_dir, image_shape=None,
@@ -686,7 +683,6 @@ def finalize(preprocess_fn, network_factory, checkpoint_path, image_shape,
         saver = tf.train.Saver(slim.get_model_variables())
         saver.save(session, output_filename, global_step=None)
 
-
 def freeze(preprocess_fn, network_factory, checkpoint_path, image_shape,
            output_filename, input_name="images", feature_name="features"):
     """Write frozen inference graph that takes as input a list of images and
@@ -733,7 +729,6 @@ def freeze(preprocess_fn, network_factory, checkpoint_path, image_shape,
         with tf.gfile.GFile(output_filename, "wb") as file_handle:
             file_handle.write(output_graph_def.SerializeToString())
 
-
 def encode(preprocess_fn, network_factory, checkpoint_path, images_or_filenames,
            batch_size=32, session=None, image_shape=None):
     """
@@ -778,7 +773,6 @@ def encode(preprocess_fn, network_factory, checkpoint_path, images_or_filenames,
     features = encoder_fn(images_or_filenames)
     return features
 
-
 def _create_encoder(preprocess_fn, network_factory, image_shape, batch_size=32,
                     session=None, checkpoint_path=None, read_from_file=False):
     if read_from_file:
@@ -817,7 +811,6 @@ def _create_encoder(preprocess_fn, network_factory, image_shape, batch_size=32,
 
     return encoder
 
-
 def _create_softmax_loss(feature_var, logit_var, label_var):
     del feature_var  # Unused variable
     cross_entropy_var = slim.losses.sparse_softmax_cross_entropy(
@@ -828,7 +821,6 @@ def _create_softmax_loss(feature_var, logit_var, label_var):
         tf.cast(tf.argmax(logit_var, 1), tf.int64), label_var)
     tf.summary.scalar("classification accuracy", accuracy_var)
 
-
 def _create_magnet_loss(feature_var, logit_var, label_var, monitor_mode=False):
     del logit_var  # Unusued variable
     magnet_loss, _, _ = losses.magnet_loss(feature_var, label_var)
@@ -836,14 +828,12 @@ def _create_magnet_loss(feature_var, logit_var, label_var, monitor_mode=False):
     if not monitor_mode:
         slim.losses.add_loss(magnet_loss)
 
-
 def _create_triplet_loss(feature_var, logit_var, label_var, monitor_mode=False):
     del logit_var  # Unusued variables
     triplet_loss = losses.softmargin_triplet_loss(feature_var, label_var)
     tf.summary.scalar("triplet_loss", triplet_loss)
     if not monitor_mode:
         slim.losses.add_loss(triplet_loss)
-
 
 def _create_loss(
         feature_var, logit_var, label_var, mode, monitor_magnet=True,

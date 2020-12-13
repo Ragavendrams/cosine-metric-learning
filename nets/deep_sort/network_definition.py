@@ -130,10 +130,6 @@ def augmentation(image):
     image = image.astype(np.uint8)
     seq = iaa.Sequential([  iaa.Fliplr(0.5),
                             iaa.Cutout(size=(0.1,0.4), position='normal', squared=False),
-                            iaa.Sometimes(0.5, iaa.GaussianBlur(sigma=(0,0.5))),
-                            iaa.AddToBrightness((-30,30)),
-                            iaa.AddToHueAndSaturation((-30,30)),
-                            iaa.Grayscale(alpha=(0.0,1.0)),
                             iaa.Affine(
                                 scale={'x':(0.9,1.1),'y':(0.9,1.1)},
                                 translate_percent={'x':(-0.1,0.1), 'y': (-0.1,0.1) },
@@ -152,6 +148,5 @@ def preprocess(image, is_training=False, input_is_bgr=False):
     if is_training:
         image = tf.numpy_function(augmentation, [image], tf.uint8)
         image.set_shape((128,64,3))
-        # tf.summary.image('preprocessed_images', image)
     image = tf.divide(tf.cast(image, tf.float32), 255.0)
     return image

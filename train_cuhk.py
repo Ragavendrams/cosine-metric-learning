@@ -85,7 +85,6 @@ def main():
             image_shape=IMAGE_SHAPE, num_galleries=20, **eval_kwargs)
     elif args.mode == "export":
         filenames = dataset.read_test_filenames()
-
         network_factory = net.create_network_factory(
             is_training=False, num_classes=cuhk.MAX_LABEL + 1,
             add_logits=False, reuse=None)
