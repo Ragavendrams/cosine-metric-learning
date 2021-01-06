@@ -91,7 +91,7 @@ def create_network(images, num_classes=None, add_logits=True, reuse=None,
             weights = slim.model_variable(
                 "mean_vectors", (feature_dim, int(num_classes)),
                 initializer=tf.truncated_normal_initializer(stddev=1e-3),
-                regularizer=None)
+                regularizer=slim.l2_regularizer(1e-8))
             scale = slim.model_variable(
                 "scale", (), tf.float32,
                 initializer=tf.constant_initializer(0., tf.float32),

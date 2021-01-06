@@ -34,9 +34,11 @@ def read_train_test_directory_to_str(directory):
         return int(x) if x.isdigit() else -1
 
     dirnames = os.listdir(directory)
+    dirnames.sort()
     image_filenames, ids, camera_indices, tracklet_indices = [], [], [], []
     for dirname in dirnames:
         filenames = os.listdir(os.path.join(directory, dirname))
+        filenames.sort()
         filenames = [
             f for f in filenames if os.path.splitext(f)[1] == ".jpg" or os.path.splitext(f)[1] == ".npy"]
         image_filenames += [

@@ -63,7 +63,6 @@ def main():
         train_x, train_y, _ = dataset.read_train()
         print("Train set size: %d images, %d identities" % (
             len(train_x), len(np.unique(train_y))))
-
         network_factory = net.create_network_factory(
             is_training=True, num_classes=cuhk.MAX_LABEL + 1,
             add_logits=args.loss_mode == "cosine-softmax")
@@ -72,17 +71,17 @@ def main():
             net.preprocess, network_factory, train_x, train_y,
             num_images_per_id=2, image_shape=IMAGE_SHAPE, **train_kwargs)
     elif args.mode == "eval":
-        valid_x, valid_y, camera_indices = dataset.read_validation()
+        valid_x, valid_y, camera_indices = dataset.read_train()
         print("Validation set size: %d images, %d identities" % (
             len(valid_x), len(np.unique(valid_y))))
-
+        print("Validation identities: ", np.unique(valid_y))
         network_factory = net.create_network_factory(
             is_training=False, num_classes=cuhk.MAX_LABEL + 1,
             add_logits=args.loss_mode == "cosine-softmax")
         eval_kwargs = train_app.to_eval_kwargs(args)
         train_app.eval_loop(
             net.preprocess, network_factory, valid_x, valid_y, camera_indices,
-            image_shape=IMAGE_SHAPE, num_galleries=20, **eval_kwargs)
+            image_shape=IMAGE_SHAPE, num_galleries=5, **eval_kwargs)
     elif args.mode == "export":
         filenames = dataset.read_test_filenames()
         network_factory = net.create_network_factory(
@@ -107,7 +106,7 @@ def main():
             is_training=False, num_classes=cuhk.MAX_LABEL + 1,
             add_logits=False, reuse=None)
         train_app.freeze(
-            functools.partial(net.preprocess, input_is_bgr=True),
+            functools.partial(net.preprocess, input_is_bgr=False),
             network_factory, args.restore_path, image_shape=IMAGE_SHAPE,
             output_filename="./cuhk.pb")
     else:

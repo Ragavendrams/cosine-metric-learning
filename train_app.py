@@ -713,11 +713,11 @@ def freeze(preprocess_fn, network_factory, checkpoint_path, image_shape,
     """
     with tf.Session(graph=tf.Graph()) as session:
         input_var = tf.placeholder(
-            tf.uint8, (None, ) + image_shape, name=input_name)
-        image_var = tf.map_fn(
-            lambda x: preprocess_fn(x, is_training=False),
-            input_var, back_prop=False, dtype=tf.float32)
-        features, _ = network_factory(image_var)
+            tf.float32, (None, ) + image_shape, name=input_name)
+        # image_var = tf.map_fn(
+        #     lambda x: preprocess_fn(x, is_training=False),
+        #     input_var, back_prop=False, dtype=tf.float32)
+        features, _ = network_factory(input_var)
         features = tf.identity(features, name=feature_name)
 
         saver = tf.train.Saver(slim.get_variables_to_restore())
