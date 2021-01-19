@@ -5,7 +5,7 @@ import cv2
 
 
 # The maximum person ID in  the dataset.
-MAX_LABEL = 5532
+MAX_LABEL = 10740
 
 IMAGE_SHAPE = 256, 128, 3
 
@@ -44,8 +44,8 @@ def read_train_test_directory_to_str(directory):
         image_filenames += [
             os.path.join(directory, dirname, f) for f in filenames]
         ids += [to_label(dirname) for _ in filenames]
-        camera_indices += [int(f[5:7]) for f in filenames]
-        tracklet_indices += [int(f[8:12]) for f in filenames]
+        camera_indices += [int(f[6:8]) for f in filenames]
+        tracklet_indices += [int(f[9:13]) for f in filenames]
 
     return image_filenames, ids, camera_indices, tracklet_indices
 

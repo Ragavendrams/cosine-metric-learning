@@ -25,18 +25,18 @@ def create_network(images, num_classes=None, add_logits=True, reuse=None,
         return slim.batch_norm(x, scope=tf.get_variable_scope().name + "/bn")
 
     network = images
-    network = residual_net.residual_block(
-        network, "conv2_1", nonlinearity, conv_weight_init, conv_bias_init,
-        conv_regularizer, increase_dim=False, is_first=True,
-        summarize_activations=create_summaries)
+    # network = residual_net.residual_block(
+    #     network, "conv2_1", nonlinearity, conv_weight_init, conv_bias_init,
+    #     conv_regularizer, increase_dim=False, is_first=True,
+    #     summarize_activations=create_summaries)
     network = residual_net.residual_block(
         network, "conv2_3", nonlinearity, conv_weight_init, conv_bias_init,
-        conv_regularizer, increase_dim=False,
+        conv_regularizer, increase_dim=False, is_first=True,
         summarize_activations=create_summaries)
 
     network = residual_net.residual_block(
         network, "conv3_1", nonlinearity, conv_weight_init, conv_bias_init,
-        conv_regularizer, increase_dim=True,
+        conv_regularizer, increase_dim=True, 
         summarize_activations=create_summaries)
     network = residual_net.residual_block(
         network, "conv3_3", nonlinearity, conv_weight_init, conv_bias_init,

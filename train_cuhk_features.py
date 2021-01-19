@@ -83,7 +83,7 @@ def main():
         eval_kwargs = train_app.to_eval_kwargs(args)
         train_app.eval_loop_for_features(
             net.preprocess, network_factory, valid_x, valid_y, camera_indices,
-            image_shape=IMAGE_SHAPE, num_galleries=20, **eval_kwargs)
+            image_shape=IMAGE_SHAPE, num_galleries=5, **eval_kwargs)
     elif args.mode == "export":
         filenames = dataset.read_test_filenames()
         network_factory = net.create_network_factory(

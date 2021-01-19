@@ -303,7 +303,7 @@ def create_trainer_for_features(preprocess_fn, network_factory, read_from_file, 
         label_var = tf.placeholder(tf.int64, (None,))
 
         def npload(file):
-            return np.load(file, allow_pickle=True)
+            return np.squeeze(np.load(file, allow_pickle=True))
 
         if read_from_file:
             # NOTE(nwojke): tf.image.decode_jpg handles various image types.
@@ -592,7 +592,7 @@ def eval_loop_for_features(preprocess_fn, network_factory, data_x, data_y, camer
         probe_x_var = tf.gather(data_x_var, probe_idx_var)
         if read_from_file:
             def npload(file):
-                return np.load(file, allow_pickle=True)
+                return np.squeeze(np.load(file, allow_pickle=True))
 
             # NOTE(nwojke): tf.image.decode_jpg handles various image types.
             num_channels = image_shape[-1] if len(image_shape) == 3 else 1
@@ -606,7 +606,7 @@ def eval_loop_for_features(preprocess_fn, network_factory, data_x, data_y, camer
         gallery_x_var = tf.gather(data_x_var, gallery_idx_var)
         if read_from_file:
             def npload(file):
-                return np.load(file, allow_pickle=True)
+                return np.squeeze(np.load(file, allow_pickle=True))
 
             # NOTE(nwojke): tf.image.decode_jpg handles various image types.
             num_channels = image_shape[-1] if len(image_shape) == 3 else 1
